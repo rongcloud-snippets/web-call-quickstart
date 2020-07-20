@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./config.js"></script>
+  <script src="./im.js"></script>
+  <script src="./util.js"></script>
+  <script src="https://cdn.ronghub.com/RongRTC-3.2.3.js"></script>
+  <script src="https://cdn.ronghub.com/RongIMLib-2.5.8.js"></script>
+  <script src="https://cdn.ronghub.com/RongCallLib-3.1.6.min.js"></script>
+  <title>CallLib Demo</title>
+</head>
+
+<body>
+  <div class="rong-container">
+    <h3 class="rong-title"> Web CallLib SDK Demo</h3>
+    <div class="rong-action">
+      <div class="rong-hide" id='callee'>请等待在线 Demo 呼叫 ... </div>
+      <div class="rong-hide" id='caller'>
+        <span>当前登录用户 ID：</span><span id='userId'></span><br />
+        <input class="rong-input" id="callUserId" type="text" placeholder="被叫方用户 ID" value="" autocomplete="off">
+        <input id='call' type="button" value="发起通话" onclick="callHandler()">
+      </div>
+    </div>
+    <div class="rong-login-box">
+      <input class="rong-input rong-hide" id='hunup' type="button" value="挂断" onclick="hungup()">
+      <div class="rong-video-box"></div>
+    </div>
+    <div class="rong-ringing" id='rong-ringing'>
+      <span class="rong-btn rong-accept" onclick="accept()"></span>
+      <span class="rong-btn rong-hungup" onclick="hungup()"></span>
+    </div>
+</body>
+
+<script>
+
+  let rongCallLib, currentUserId, callMessage;
+
+  let videoWatcher, commandWatcher;
+
+  const getDom = (key) => {
+    return document.querySelector(key);
+  };
+
+  let userId = location.search.substring(1);
+
+  if (!userId) {
+    userId = getUUID();
+    let userUUIDNode = getDom('#userId');
+    userUUIDNode.innerHTML = userId;
+    document.getElementById('caller').classList.add('rong-show')
+  } else {
+    document.getElementById('callee').classList.add('rong-show');
+  }
+
+  const connectIM = (e) => {
+    return Http.post('/getToken', { userId }).then(({ token }) => {
+      initIM({ appkey: Config.appkey, token }).then((userId) => {
+        console.info(userId);
+        currentUserId = userId;
+        callInit();
+      });
+    });
+  };
+
+  const callInit = () => {
+    let config = {
+      RongIMLib: RongIMLib,
+      RongRTC: RongRTC
+    };
+    rongCallLib = RongCallLib.init(config);
+
+    videoWatcher = function (result) {
+      let { type } = result;
+      const parentDom = document.querySelector('.rong-video-box');
+      if (type === 'added') {
+        let video = result.data;
+        parentDom.appendChild(video);
+        document.getElementById('hunup').classList.add('rong-show');
+      }
+    };
+    rongCallLib.videoWatch(videoWatcher);
+
+    commandWatcher = function (message) {
+      let event = commandEvents[message.messageType];
+      event && event(message);
+    };
+    rongCallLib.commandWatch(commandWatcher);
+  };
+
+  const commandEvents = {
+    InviteMessage: function (message) {
+      callMessage = message;
+      document.getElementById('rong-ringing').classList.add('rong-show');
+      NotificationComm('呼叫通知', { body: '收到呼叫等待您的接听' });
+    },
+    HungupMessage: function (message) {
+      callMessage = message;
+      hungup();
+    }
+  };
+
+  const accept = () => {
+    let params = messageToCallInfo(callMessage);
+    rongCallLib.accept(params, function (error) {
+      if (error) {
+        console.error('接听通话失败', error);
+      }
+      document.getElementById('rong-ringing').classList.remove('rong-show');
+    });
+  };
+
+  const hungup = () => {
+    let params = messageToCallInfo(callMessage)
+    rongCallLib.hungup(params, function (error) {
+      if (error) {
+        console.error('挂断通话失败', error);
+      }
+      document.getElementById('rong-ringing').classList.remove('rong-show');
+      document.getElementById('hunup').classList.remove('rong-show');
+      const parentDom = document.querySelector('.rong-video-box');
+      parentDom.innerHTML = '';
+    });
+  }
+
+  const call = () => {
+    let params = {
+      conversationType: RongIMLib.ConversationType.PRIVATE,
+      targetId: userId,
+      mediaType: RongIMLib.VoIPMediaType.MEDIA_VEDIO
+    };
+    rongCallLib.call(params, function (error) {
+      if (error) {
+        console.error('发起通话失败', error);
+      }
+    });
+  }
+
+  function messageToCallInfo(message) {
+    return {
+      conversationType: message.conversationType,
+      targetId: message.targetId,
+      mediaType: message.content.mediaType
+    };
+  }
+
+  function callHandler() {
+    userId = document.getElementById('callUserId').value;
+    call();
+  }
+
+  connectIM();
+
+</script>
+
+</html>
